@@ -1,3 +1,5 @@
 data/runtime.json
 cypress/screenshots/
 cypress/videos/
+~
+*.tmp
