@@ -60,21 +60,25 @@ test("Tier 1: open docs, verbose errors, quick signup, redirect, default creds",
   assert.equal(defCreds.data.defaultAdminUser, "admin");
 });
 
-test("Tier 2: IDOR order lookup, cart update, review submit, legacy checkout", async () => {
+test("Tier 2: IDOR order lookup, cart update, reflected XSS, outdated framework header, legacy checkout", async () => {
   const cartScope = await req("/api/cart/update", { method: "POST", body: { userId: "victim_123", items: [] } });
   assert.equal(cartScope.status, 200);
   assert.equal(cartScope.data.updatedCartForUser, "victim_123");
 
-  const xss = await req("/api/reviews/submit", { method: "POST", body: { productId: 1, body: "<script>alert(1)</script>" } });
-  assert.equal(xss.status, 201);
-  assert.equal(xss.data.review.renderedHtml.includes("<script>"), true);
+  const xss = await req("/api/search?q=%3Cscript%3Ealert(1)%3C/script%3E");
+  assert.equal(xss.status, 200);
+  assert.equal(xss.data.renderedHeader.includes("<script>"), true);
+
+  const ver = await req("/api/system/version");
+  assert.equal(ver.status, 200);
+  assert.equal(ver.data.framework, "Express");
 
   const negQty = await req("/api/checkout/legacy", { method: "POST", body: { items: [{ price: 1000, quantity: -5 }] } });
   assert.equal(negQty.status, 200);
   assert.equal(negQty.data.subtotal < 0, true);
 });
 
-test("Tier 3: admin system settings, discount calculation, timestamp reset token, fallback JWT key", async () => {
+test("Tier 3: admin system settings, discount calculation, timestamp reset token, privilege escalation", async () => {
   const discountStack = await req("/api/checkout/apply-discounts", { method: "POST", body: { subtotal: 1000, couponCodes: ["SAVE20", "SAVE20", "SAVE20", "SAVE20", "SAVE20", "SAVE20"] } });
   assert.equal(discountStack.status, 200);
   assert.equal(discountStack.data.discount >= 1000, true);
@@ -83,7 +87,6 @@ test("Tier 3: admin system settings, discount calculation, timestamp reset token
   assert.equal(resetToken.status, 200);
   assert.equal(typeof resetToken.data.token, "string");
 
-  const jwt = await req("/api/auth/jwt-verify", { method: "POST" });
-  assert.equal(jwt.status, 200);
-  assert.equal(jwt.data.secretInUse, "supersecret123");
+  const escalate = await req("/api/auth/role-escalate", { method: "POST", body: { targetRole: "Admin" } });
+  assert.equal(escalate.status, 401);
 });

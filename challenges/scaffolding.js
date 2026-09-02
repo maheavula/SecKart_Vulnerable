@@ -78,11 +78,16 @@ function handleGeneralRoutes(req, res, url, db, sessions, currentUser, body = {}
     return sendJson(res, 200, { success: true, updatedCartForUser: userId, items });
   }
 
-  // 2.3 Review submission endpoint
-  if (req.method === "POST" && url.pathname === "/api/reviews/submit") {
-    const { productId, body: reviewText } = body;
-    const review = { id: "rev_xss", productId, body: reviewText, renderedHtml: `<div>${reviewText}</div>` };
-    return sendJson(res, 201, { review });
+  // 2.3 Reflected XSS on Search endpoint
+  if (req.method === "GET" && url.pathname === "/api/search") {
+    const q = url.searchParams.get("q") || "";
+    return sendJson(res, 200, { query: q, renderedHeader: `<div>Search results for ${q}</div>` });
+  }
+
+  // 2.4 Outdated framework version header inspector endpoint
+  if (req.method === "GET" && url.pathname === "/api/system/version") {
+    res.setHeader("X-Powered-By", "Express/4.16.0");
+    return sendJson(res, 200, { framework: "Express", version: "4.16.0", status: "Outdated / End of Life (CVE-2019-10744)" });
   }
 
   // 2.5 Legacy checkout endpoint
@@ -122,10 +127,19 @@ function handleGeneralRoutes(req, res, url, db, sessions, currentUser, body = {}
     return sendJson(res, 200, { message: "Reset token generated", token: deterministicToken });
   }
 
-  // 3.5 JWT key verification endpoint
-  if (req.method === "POST" && url.pathname === "/api/auth/jwt-verify") {
-    const jwtSecret = process.env.JWT_SECRET || "supersecret123";
-    return sendJson(res, 200, { secretInUse: jwtSecret, status: "Verified" });
+  // 3.5 Privilege Escalation to Admin Access endpoint
+  if (req.method === "POST" && url.pathname === "/api/auth/role-escalate") {
+    if (!currentUser) return sendJson(res, 401, { error: "Authentication required" });
+    const targetRole = body.targetRole || "Admin";
+    currentUser.role = targetRole;
+    if (db && Array.isArray(db.users)) {
+      const u = db.users.find(x => x.id === currentUser.id);
+      if (u) u.role = targetRole;
+    }
+    return sendJson(res, 200, {
+      message: `Role successfully escalated to ${targetRole}`,
+      user: { id: currentUser.id, username: currentUser.username, role: currentUser.role }
+    });
   }
 
   return false;
